@@ -1,143 +1,158 @@
 package com.company.maintenance.app.infrastructure.adapter.in.rest.controller;
 
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
-import org.springframework.web.bind.annotation.RestController;
-import com.company.maintenance.app.application.port.in.MantenimientoUseCase;
-import com.company.maintenance.app.infrastructure.adapter.in.rest.dto.AddRepuestoRequest;
-import com.company.maintenance.app.infrastructure.adapter.in.rest.dto.MantenimientoRequest;
-import com.company.maintenance.app.infrastructure.adapter.in.rest.dto.MantenimientoResponse;
-import com.company.maintenance.app.infrastructure.adapter.in.rest.mapper.MantenimientoDtoMapper;
-
-import jakarta.validation.Valid;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-
+import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.Date;
 
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+import com.company.maintenance.app.application.port.in.MantenimientoUseCase;
+import com.company.maintenance.app.infrastructure.adapter.in.rest.dto.AddRepuestoRequest;
+import com.company.maintenance.app.infrastructure.adapter.in.rest.dto.MantenimientoRequest;
+import com.company.maintenance.app.infrastructure.adapter.in.rest.dto.MantenimientoResponse;
+import com.company.maintenance.app.infrastructure.adapter.in.rest.mapper.MantenimientoDtoMapper;
+import jakarta.validation.Valid;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 @RestController
 @RequestMapping("/api/mantenimientos")
+@PreAuthorize("hasAnyRole('TECNICO', 'SUPERVISOR')")
 public class MantenimientoController {
     
     private final MantenimientoUseCase mantenimientoUseCase;
+    private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
 
     public MantenimientoController(MantenimientoUseCase mantenimientoUseCase) {
         this.mantenimientoUseCase = mantenimientoUseCase;
     }
 
+    /**
+     * ✅ Convertir Date a String antes de llamar al use case
+     */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasRole('TECNICO')")
     public Mono<MantenimientoResponse> createMantenimiento(
             @Valid @RequestBody MantenimientoRequest request) {
+        
+        String fechaStr = dateFormat.format(request.getFecha()); // ✅ Conversión
+        
         return mantenimientoUseCase.createMantenimiento(
-                request.getFecha(),
+                fechaStr,
                 request.getDescripcion(),
                 request.getPrecio(),
                 request.getRepuestosIds(),
                 request.getTipo()
             )
-            .map(MantenimientoDtoMapper::toResponse);
+            .flatMap(MantenimientoDtoMapper::toResponseReactive);
     }
-    
-    @PostMapping("/asignar")
+
+    /**
+     * ✅ Crear mantenimiento asignado a máquina
+     */
+    @PostMapping("/maquina/{maquinaId}")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasRole('TECNICO')")
-    public Mono<MantenimientoResponse> createMantenimientoAsignaMaquina(
+    public Mono<MantenimientoResponse> createMantenimientoForMaquina(
+            @PathVariable String maquinaId,
             @Valid @RequestBody MantenimientoRequest request) {
+        
+        String fechaStr = dateFormat.format(request.getFecha()); // ✅ Conversión
+        
         return mantenimientoUseCase.createMantenimientoAsignaMaquina(
-                request.getFecha(),
+                maquinaId,
+                fechaStr,
                 request.getDescripcion(),
                 request.getPrecio(),
                 request.getRepuestosIds(),
-                request.getTipo(),
-                request.getMaquinaId()
+                request.getTipo()
             )
-            .map(MantenimientoDtoMapper::toResponse);
+            .flatMap(MantenimientoDtoMapper::toResponseReactive);
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('SUPERVISOR', 'TECNICO')")
-    public Mono<MantenimientoResponse> getMantenimientoById(@PathVariable("id") String id) {
+    public Mono<MantenimientoResponse> getMantenimientoById(@PathVariable String id) {
         return mantenimientoUseCase.findById(id)
-            .map(MantenimientoDtoMapper::toResponse);
+            .flatMap(MantenimientoDtoMapper::toResponseReactive);
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('SUPERVISOR', 'TECNICO')")
     public Flux<MantenimientoResponse> getAllMantenimientos() {
         return mantenimientoUseCase.findAll()
-            .map(MantenimientoDtoMapper::toResponse);
+            .flatMap(MantenimientoDtoMapper::toResponseReactive);
     }
 
-    @GetMapping("/fecha")
-    @PreAuthorize("hasAnyRole('SUPERVISOR', 'TECNICO')")
+    /**
+     * ✅ Búsqueda por rango de fechas
+     */
+    @GetMapping("/fecha-range")
     public Flux<MantenimientoResponse> getMantenimientosByFechaRange(
-            @RequestParam("min") @DateTimeFormat(pattern = "yyyy-MM-dd") Date startDate,
-            @RequestParam("max") @DateTimeFormat(pattern = "yyyy-MM-dd") Date endDate) {
-        return mantenimientoUseCase.findByFechaRange(startDate, endDate)
-            .map(MantenimientoDtoMapper::toResponse);
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+
+        String startDateStr = startDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+        String endDateStr = endDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+
+        return mantenimientoUseCase.findByFechaRange(startDateStr, endDateStr)
+            .flatMap(MantenimientoDtoMapper::toResponseReactive);
     }
 
-    @GetMapping("/precio")
-    @PreAuthorize("hasAnyRole('SUPERVISOR', 'TECNICO')")
+
+    @GetMapping("/tipo/{tipo}")
+    public Flux<MantenimientoResponse> getMantenimientosByTipo(@PathVariable String tipo) {
+        return mantenimientoUseCase.findByTipo(tipo)
+            .flatMap(MantenimientoDtoMapper::toResponseReactive);
+    }
+
+    @GetMapping("/precio-range")
     public Flux<MantenimientoResponse> getMantenimientosByPriceRange(
-    		@RequestParam("min") Double min,
-    		@RequestParam("max") Double max) {
-        return mantenimientoUseCase.findByPriceRange(min, max)
-            .map(MantenimientoDtoMapper::toResponse);
+            @RequestParam Double minPrecio,
+            @RequestParam Double maxPrecio) {
+        return mantenimientoUseCase.findByPriceRange(minPrecio, maxPrecio)
+            .flatMap(MantenimientoDtoMapper::toResponseReactive);
     }
 
-    
+    /**
+     * ✅ Actualizar mantenimiento
+     */
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('SUPERVISOR')")
     public Mono<MantenimientoResponse> updateMantenimiento(
-            @PathVariable("id") String id,
+            @PathVariable String id,
             @Valid @RequestBody MantenimientoRequest request) {
+        
+        String fechaStr = dateFormat.format(request.getFecha()); // ✅ Conversión
+        
         return mantenimientoUseCase.updateMantenimiento(
                 id,
-                request.getFecha(),
+                fechaStr,
                 request.getDescripcion(),
                 request.getPrecio(),
                 request.getTipo()
             )
-            .map(MantenimientoDtoMapper::toResponse);
+            .flatMap(MantenimientoDtoMapper::toResponseReactive);
     }
 
     @PostMapping("/{id}/repuestos")
-    @PreAuthorize("hasRole('TECNICO')")
     public Mono<MantenimientoResponse> addRepuestoToMantenimiento(
-            @PathVariable("id") String id,
+            @PathVariable String id,
             @Valid @RequestBody AddRepuestoRequest request) {
         return mantenimientoUseCase.addRepuestoToMantenimiento(id, request.getRepuestoId())
-            .map(MantenimientoDtoMapper::toResponse);
+            .flatMap(MantenimientoDtoMapper::toResponseReactive);
     }
 
     @DeleteMapping("/{id}/repuestos/{repuestoId}")
-    @PreAuthorize("hasRole('SUPERVISOR')")
     public Mono<MantenimientoResponse> removeRepuestoFromMantenimiento(
-            @PathVariable("id") String id,
-            @PathVariable("repuestoId") String repuestoId) {
+            @PathVariable String id,
+            @PathVariable String repuestoId) {
         return mantenimientoUseCase.removeRepuestoFromMantenimiento(id, repuestoId)
-            .map(MantenimientoDtoMapper::toResponse);
+            .flatMap(MantenimientoDtoMapper::toResponseReactive);
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('SUPERVISOR')")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public Mono<Void> deleteMantenimiento(@PathVariable("id") String id) {
+    public Mono<Void> deleteMantenimiento(@PathVariable String id) {
         return mantenimientoUseCase.deleteById(id);
     }
 }
-

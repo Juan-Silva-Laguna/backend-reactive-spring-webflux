@@ -1,46 +1,42 @@
 package com.company.maintenance.app.application.port.service;
 
-import java.util.Date;
 import java.util.List;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-
-import com.company.maintenance.app.MaintenanceApplication;
+import org.springframework.stereotype.Service;
 import com.company.maintenance.app.application.port.in.MantenimientoUseCase;
 import com.company.maintenance.app.application.port.out.MantenimientoRepository;
 import com.company.maintenance.app.application.port.out.MaquinaRepository;
-import com.company.maintenance.app.application.port.out.RepuestoRepository;
+import com.company.maintenance.app.application.port.out.RepuestoReadRepository;
 import com.company.maintenance.app.domain.exception.MantenimientoException;
 import com.company.maintenance.app.domain.exception.MaquinaException;
 import com.company.maintenance.app.domain.exception.RepuestoException;
 import com.company.maintenance.app.domain.model.Mantenimiento;
-import com.company.maintenance.app.domain.model.Repuesto;
-
+import com.company.maintenance.app.domain.model.Maquina;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public class MantenimientoService implements MantenimientoUseCase{
+@Service
+public class MantenimientoService implements MantenimientoUseCase {
 
-	private final MantenimientoRepository mantenimientoRepository;
-    private final RepuestoRepository repuestoRepository;
-	private static final Logger log = LoggerFactory.getLogger(MaintenanceApplication.class);
+    private final MantenimientoRepository mantenimientoRepository;
+    private final MaquinaRepository maquinaRepository;
+    private final RepuestoReadRepository repuestoRepository;
 
-    @Autowired
-    MaquinaRepository maquinaRepository;
-
-    public MantenimientoService(MantenimientoRepository mantenimientoRepository,
-                               RepuestoRepository repuestoRepository) {
+    public MantenimientoService(
+            MantenimientoRepository mantenimientoRepository,
+            MaquinaRepository maquinaRepository,
+            RepuestoReadRepository repuestoRepository) {
         this.mantenimientoRepository = mantenimientoRepository;
+        this.maquinaRepository = maquinaRepository;
         this.repuestoRepository = repuestoRepository;
     }
-    
+
     @Override
-    public Mono<Mantenimiento> createMantenimiento(Date fecha, String descripcion, Double precio, List<String> repuestosIds, String tipo) {
+    public Mono<Mantenimiento> createMantenimiento(
+            String fecha, String descripcion, Double precio, 
+            List<String> repuestosIds, String tipo) {
+        
         if (repuestosIds == null || repuestosIds.isEmpty()) {
-            Mantenimiento mantenimiento = new Mantenimiento(fecha, descripcion, precio, List.of(), tipo, null);
-            mantenimiento.recalcularPrecioTotal();
+            Mantenimiento mantenimiento = new Mantenimiento(fecha, descripcion, precio, null, tipo);
             return mantenimientoRepository.save(mantenimiento);
         }
 
@@ -49,44 +45,51 @@ public class MantenimientoService implements MantenimientoUseCase{
                 .switchIfEmpty(Mono.error(RepuestoException.notFound(id)))
             )
             .collectList()
-            .map(repuestos -> {
-                Mantenimiento mantenimiento = new Mantenimiento(fecha, descripcion, precio, repuestos, tipo, null);
-                mantenimiento.recalcularPrecioTotal();
-                return mantenimiento;
-            })
-            .flatMap(mantenimientoRepository::save);
-    }
-    
-    @Override
-    public Mono<Mantenimiento> createMantenimientoAsignaMaquina(Date fecha, String descripcion, 
-                                                                 Double precio, List<String> repuestosIds, 
-                                                                 String tipo, String idMaquina) {
-        return maquinaRepository.findById(idMaquina)
-            .switchIfEmpty(Mono.error(MaquinaException.notFound(idMaquina)))
-            .flatMap(maquina -> {
-                Mono<List<Repuesto>> repuestosMono = (repuestosIds != null && !repuestosIds.isEmpty())
-                    ? Flux.fromIterable(repuestosIds)
-                        .flatMap(id -> repuestoRepository.findById(id)
-                            .switchIfEmpty(Mono.error(RepuestoException.notFound(id)))
-                        )
-                        .collectList()
-                    : Mono.just(List.of());
-
-                return repuestosMono.flatMap(repuestos -> {
-                    Mantenimiento mantenimiento = new Mantenimiento(fecha, descripcion, precio, repuestos, tipo, idMaquina);
-                    mantenimiento.recalcularPrecioTotal();
-                    return mantenimientoRepository.save(mantenimiento)
-                        .flatMap(mGuardado -> {
-                            maquina.addMantenimiento(mGuardado);
-                            return maquinaRepository.save(maquina)
-                                .thenReturn(mGuardado);
-                        });
-                });
+            .flatMap(repuestos -> { // ✅ Tipo explícito
+                Mantenimiento mantenimiento = new Mantenimiento(fecha, descripcion, precio, repuestos, tipo).recalcularPrecioTotal();
+                return mantenimientoRepository.save(mantenimiento);
             });
     }
 
+    @Override
+    public Mono<Mantenimiento> createMantenimientoAsignaMaquina(
+            String maquinaId, String fecha, String descripcion, 
+            Double precio, List<String> repuestosIds, String tipo) {
+        
+        return maquinaRepository.findById(maquinaId)
+            .switchIfEmpty(Mono.error(MaquinaException.notFound(maquinaId)))
+            .flatMap(maquina -> {
+                if (repuestosIds == null || repuestosIds.isEmpty()) {
+                    Mantenimiento mantenimiento = new Mantenimiento(
+                        fecha, descripcion, precio, null, tipo
+                    ).withMaquinaId(maquinaId);
+                    
+                    return mantenimientoRepository.save(mantenimiento)
+                        .flatMap(mantGuardado -> 
+                            maquinaRepository.save(maquina.withMantenimiento(mantGuardado))
+                                .thenReturn(mantGuardado)
+                        );
+                }
 
-    // READ
+                return Flux.fromIterable(repuestosIds)
+                    .flatMap(id -> repuestoRepository.findById(id)
+                        .switchIfEmpty(Mono.error(RepuestoException.notFound(id)))
+                    )
+                    .collectList()
+                    .flatMap(repuestos -> { // ✅ Tipo explícito
+                        Mantenimiento mantenimiento = new Mantenimiento(
+                            fecha, descripcion, precio, repuestos, tipo
+                        ).withMaquinaId(maquinaId).recalcularPrecioTotal();
+                        
+                        return mantenimientoRepository.save(mantenimiento)
+                            .flatMap(mantGuardado -> 
+                                maquinaRepository.save(maquina.withMantenimiento(mantGuardado))
+                                    .thenReturn(mantGuardado)
+                            );
+                    });
+            });
+    }
+
     @Override
     public Mono<Mantenimiento> findById(String id) {
         return mantenimientoRepository.findById(id)
@@ -99,137 +102,113 @@ public class MantenimientoService implements MantenimientoUseCase{
     }
 
     @Override
-    public Flux<Mantenimiento> findByTipo(String tipo) {
-        if (tipo.toLowerCase() == "preventivo" || tipo.toLowerCase() == "correctivo") {
-            return Flux.error(MantenimientoException.invalidMantenimiento("El tipo de mantenimiento no se reconoce"));
-        }
-        
-        return mantenimientoRepository.findByTipo(tipo);
+    public Flux<Mantenimiento> findByFecha(String fecha) {
+        return mantenimientoRepository.findByFecha(fecha);
     }
-    
+
     @Override
-    public Flux<Mantenimiento> findByFechaRange(Date startDate, Date endDate) {
-        if (startDate == null || endDate == null) {
-            return Flux.error(MantenimientoException.invalidMantenimiento("Las fechas no pueden ser nulas"));
-        }
-        if (startDate.after(endDate)) {
-            return Flux.error(MantenimientoException.invalidMantenimiento("La fecha inicial debe ser anterior a la fecha final"));
-        }
+    public Flux<Mantenimiento> findByFechaRange(String startDate, String endDate) {
         return mantenimientoRepository.findByFechaBetween(startDate, endDate);
     }
 
     @Override
-    public Flux<Mantenimiento> findByPriceRange(Double minPrice, Double maxPrice) {
-        if (minPrice < 0 || maxPrice < 0 || minPrice > maxPrice) {
-            return Flux.error( MantenimientoException.invalidMantenimiento(
-                "Rango de precios inválido: min=" + minPrice + ", max=" + maxPrice
-            ));
-        }
-        return mantenimientoRepository.findByPrecioBetween(minPrice, maxPrice);
+    public Flux<Mantenimiento> findByTipo(String tipo) {
+        return mantenimientoRepository.findByTipo(tipo);
     }
-    
+
     @Override
-    public Mono<Mantenimiento> updateMantenimiento(String id, Date fecha, String descripcion, Double precio, String tipo) {
+    public Flux<Mantenimiento> findByPriceRange(Double minPrecio, Double maxPrecio) {
+        return mantenimientoRepository.findByPrecioBetween(minPrecio, maxPrecio);
+    }
+
+    @Override
+    public Mono<Mantenimiento> updateMantenimiento(
+            String id, String fecha, String descripcion, 
+            Double precio, String tipo) {
+        
         return mantenimientoRepository.findById(id)
             .switchIfEmpty(Mono.error(MantenimientoException.notFound(id)))
-            .map(mantenimiento -> {
-                mantenimiento.setFecha(fecha);
-                mantenimiento.setDescripcion(descripcion);
-                mantenimiento.setPrecio(precio);
-                mantenimiento.recalcularPrecioTotal();
-                mantenimiento.setTipo(tipo);
-                return mantenimiento;
-            })
-            .flatMap(mantenimientoRepository::save)
-            .flatMap(mGuardado -> {
-                if (mGuardado.getMaquinaId() != null && !mGuardado.getMaquinaId().isEmpty()) {
-                    return maquinaRepository.findById(mGuardado.getMaquinaId())
-                        .flatMap(maquina -> {
-
-                        	List<Mantenimiento> actualizados = maquina.getMantenimientos()
-                                    .stream()
-                                    .map(m -> m.getId().equals(mGuardado.getId()) ? mGuardado : m)
-                                    .toList();
-
-                            maquina.setMantenimientos(actualizados);
-                            
-                            return maquinaRepository.save(maquina)
-                                .thenReturn(mGuardado);
-                        })
-                        .switchIfEmpty(Mono.just(mGuardado));
-                } else {
-                    return Mono.just(mGuardado);
-                }
+            .map(mantenimiento -> mantenimiento
+                .withFecha(fecha)
+                .withDescripcion(descripcion)
+                .withPrecio(precio)
+                .withTipo(tipo)
+                .recalcularPrecioTotal()
+            )
+            .flatMap(mantenimiento -> {
+                return mantenimientoRepository.save(mantenimiento)
+                    .flatMap(mantGuardado -> {
+                        if (mantGuardado.getMaquinaId() != null) {
+                            return maquinaRepository.findById(mantGuardado.getMaquinaId())
+                                .flatMap(maquina -> {
+                                    Maquina maquinaActualizada = maquina
+                                        .withoutMantenimiento(mantGuardado.getId())
+                                        .withMantenimiento(mantGuardado);
+                                    return maquinaRepository.save(maquinaActualizada);
+                                })
+                                .thenReturn(mantGuardado);
+                        }
+                        return Mono.just(mantGuardado);
+                    });
             });
     }
 
-
-//    @Override
-//    public Mono<Mantenimiento> addRepuestoToMantenimiento(String mantenimientoId, String repuestoId) {
-//        return Mono.zip(
-//            mantenimientoRepository.findById(mantenimientoId)
-//                .switchIfEmpty(Mono.error(MantenimientoException.notFound(mantenimientoId))),
-//            repuestoRepository.findById(repuestoId)
-//                .switchIfEmpty(Mono.error(RepuestoException.notFound(repuestoId)))
-//        )
-//        .map(tuple -> {
-//            Mantenimiento mantenimiento = tuple.getT1();
-//            Repuesto repuesto = tuple.getT2();
-//            mantenimiento.addRepuesto(repuesto);
-//            return mantenimiento;
-//        })
-//        .flatMap(mantenimientoRepository::save);
-//    }
-    
     @Override
     public Mono<Mantenimiento> addRepuestoToMantenimiento(String mantenimientoId, String repuestoId) {
+        Mono<Mantenimiento> mantenimientoMono = mantenimientoRepository.findById(mantenimientoId)
+            .switchIfEmpty(Mono.error(MantenimientoException.notFound(mantenimientoId)));
+
         return Mono.zip(
-                mantenimientoRepository.findById(mantenimientoId)
-                        .switchIfEmpty(Mono.error(MantenimientoException.notFound(mantenimientoId))),
-                repuestoRepository.findById(repuestoId)
-                        .switchIfEmpty(Mono.error(RepuestoException.notFound(repuestoId)))
+            mantenimientoMono,
+            repuestoRepository.findById(repuestoId)
+                .switchIfEmpty(Mono.error(RepuestoException.notFound(repuestoId)))
         )
-        .flatMap(tuple -> {
-            Mantenimiento mantenimiento = tuple.getT1();
-            Repuesto repuesto = tuple.getT2();
-            mantenimiento.addRepuesto(repuesto);
-            mantenimiento.setPrecio(mantenimiento.getPrecio()+repuesto.getPrecio());
-            
+        .map(tuple -> tuple.getT1()
+            .withRepuesto(tuple.getT2()).aumentarPrecio(tuple.getT2().getPrecio())
+//            .recalcularPrecioTotal()
+        )
+        .flatMap(mantenimiento -> {
             return mantenimientoRepository.save(mantenimiento)
-                .flatMap(mGuardado -> {
-                    if (mantenimiento.getMaquinaId() != null && !mantenimiento.getMaquinaId().isEmpty()) {
-                        return maquinaRepository.findById(mantenimiento.getMaquinaId())
+                .flatMap(mantGuardado -> {
+                    if (mantGuardado.getMaquinaId() != null) {
+                        return maquinaRepository.findById(mantGuardado.getMaquinaId())
                             .flatMap(maquina -> {
-                                maquina.addRepuestoMantenimiento(repuesto);
-                                return maquinaRepository.save(maquina).thenReturn(mGuardado);
+                                Maquina maquinaActualizada = maquina
+                                    .withoutMantenimiento(mantGuardado.getId())
+                                    .withMantenimiento(mantGuardado);
+                                return maquinaRepository.save(maquinaActualizada);
                             })
-                            .switchIfEmpty(Mono.just(mGuardado)); // Si no encuentra máquina, devolver mantenimiento
+                            .thenReturn(mantGuardado);
                     }
-                    return Mono.just(mGuardado);
+                    return Mono.just(mantGuardado);
                 });
         });
     }
 
-
     @Override
-    public Mono<Mantenimiento> removeRepuestoFromMantenimiento(String mantenimientoId, String repuestoId) {
+    public Mono<Mantenimiento> removeRepuestoFromMantenimiento(
+            String mantenimientoId, String repuestoId) {
+        
         return mantenimientoRepository.findById(mantenimientoId)
             .switchIfEmpty(Mono.error(MantenimientoException.notFound(mantenimientoId)))
+            .map(mantenimiento -> mantenimiento
+                .withoutRepuesto(repuestoId)
+//                .recalcularPrecioTotal()
+            )
             .flatMap(mantenimiento -> {
-                mantenimiento.removeRepuesto(repuestoId);
-                
                 return mantenimientoRepository.save(mantenimiento)
-                    .flatMap(mGuardado -> {
-                        // Solo actualizar máquina si tiene maquinaId asignado
-                        if (mantenimiento.getMaquinaId() != null && !mantenimiento.getMaquinaId().isEmpty()) {
-                            return maquinaRepository.findById(mantenimiento.getMaquinaId())
+                    .flatMap(mantGuardado -> {
+                        if (mantGuardado.getMaquinaId() != null) {
+                            return maquinaRepository.findById(mantGuardado.getMaquinaId())
                                 .flatMap(maquina -> {
-                                    maquina.removeRepuestoMantenimiento(repuestoId);
-                                    return maquinaRepository.save(maquina).thenReturn(mGuardado);
+                                    Maquina maquinaActualizada = maquina
+                                        .withoutMantenimiento(mantGuardado.getId())
+                                        .withMantenimiento(mantGuardado);
+                                    return maquinaRepository.save(maquinaActualizada);
                                 })
-                                .switchIfEmpty(Mono.just(mGuardado)); // Si no encuentra máquina, devolver mantenimiento
+                                .thenReturn(mantGuardado);
                         }
-                        return Mono.just(mGuardado);
+                        return Mono.just(mantGuardado);
                     });
             });
     }

@@ -1,80 +1,90 @@
 package com.company.maintenance.app.infrastructure.adapter.in.rest.exception;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.support.WebExchangeBindException;
-import org.springframework.http.HttpStatus;
-
+import com.company.maintenance.app.domain.exception.MaquinaException;
 import com.company.maintenance.app.domain.exception.MantenimientoException;
-import com.company.maintenance.app.domain.exception.RepuestoException;
-import com.company.maintenance.app.infrastructure.adapter.in.rest.dto.ErrorResponse;
-
 import reactor.core.publisher.Mono;
+import java.time.LocalDateTime;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(RepuestoException.class)
-    @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public Mono<ErrorResponse> handleRepuestoException(RepuestoException ex) {
-        String msg = ex.getMessage().toLowerCase().contains("no encontrado") 
-            ? "NOT_FOUND" 
-            : "BAD_REQUEST";
-        int code = msg.equals("NOT_FOUND") ? 404 : 400;
-
-        return Mono.just(new ErrorResponse(ex.getMessage(), msg, code));
+    @ExceptionHandler(MaquinaException.class)
+    public Mono<ResponseEntity<ErrorResponse>> handleMaquinaException(MaquinaException ex) {
+        ErrorResponse error = new ErrorResponse(
+            LocalDateTime.now(),
+            HttpStatus.NOT_FOUND.value(),
+            "Máquina no encontrada",
+            ex.getMessage()
+        );
+        return Mono.just(ResponseEntity.status(HttpStatus.NOT_FOUND).body(error));
     }
 
     @ExceptionHandler(MantenimientoException.class)
-    @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public Mono<ErrorResponse> handleMantenimientoException(MantenimientoException ex) {
-        String msg = ex.getMessage().toLowerCase().contains("no encontrado") 
-            ? "NOT_FOUND" 
-            : "BAD_REQUEST";
-        int code = msg.equals("NOT_FOUND") ? 404 : 400;
-
-        return Mono.just(new ErrorResponse(ex.getMessage(), msg, code));
-    } 
-
-    @ExceptionHandler(WebExchangeBindException.class)
-    @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public Mono<ErrorResponse> handleValidationErrors(WebExchangeBindException ex) {
-        String errors = ex.getBindingResult()
-            .getFieldErrors()
-            .stream()
-            .map(error -> error.getField() + ": " + error.getDefaultMessage())
-            .reduce((a, b) -> a + ", " + b)
-            .orElse("Error de validación");
-
-        return Mono.just(new ErrorResponse(
-            "Errores de validación: " + errors,
-            "VALIDATION_ERROR",
-            400
-        ));
+    public Mono<ResponseEntity<ErrorResponse>> handleMantenimientoException(MantenimientoException ex) {
+        ErrorResponse error = new ErrorResponse(
+            LocalDateTime.now(),
+            HttpStatus.NOT_FOUND.value(),
+            "Mantenimiento no encontrado",
+            ex.getMessage()
+        );
+        return Mono.just(ResponseEntity.status(HttpStatus.NOT_FOUND).body(error));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
-    @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public Mono<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex) {
-        return Mono.just(new ErrorResponse(
-            ex.getMessage(),
-            "BAD_REQUEST",
-            400
-        ));
+    public Mono<ResponseEntity<ErrorResponse>> handleIllegalArgument(IllegalArgumentException ex) {
+        ErrorResponse error = new ErrorResponse(
+            LocalDateTime.now(),
+            HttpStatus.BAD_REQUEST.value(),
+            "Validación fallida",
+            ex.getMessage()
+        );
+        return Mono.just(ResponseEntity.badRequest().body(error));
+    }
+
+    @ExceptionHandler(WebExchangeBindException.class)
+    public Mono<ResponseEntity<Map<String, Object>>> handleValidationErrors(
+            WebExchangeBindException ex) {
+        
+        Map<String, String> errors = ex.getFieldErrors().stream()
+            .collect(Collectors.toMap(
+                error -> error.getField(),
+                error -> error.getDefaultMessage(),
+                (existing, replacement) -> existing
+            ));
+
+        Map<String, Object> response = Map.of(
+            "timestamp", LocalDateTime.now(),
+            "status", HttpStatus.BAD_REQUEST.value(),
+            "error", "Errores de validación",
+            "errors", errors
+        );
+
+        return Mono.just(ResponseEntity.badRequest().body(response));
     }
 
     @ExceptionHandler(Exception.class)
-    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
-    public Mono<ErrorResponse> handleGenericError(Exception ex) {
-        return Mono.just(new ErrorResponse(
+    public Mono<ResponseEntity<ErrorResponse>> handleGenericException(Exception ex) {
+        ErrorResponse error = new ErrorResponse(
+            LocalDateTime.now(),
+            HttpStatus.INTERNAL_SERVER_ERROR.value(),
             "Error interno del servidor",
-            "INTERNAL_SERVER_ERROR",
-            500
-        ));
+            ex.getMessage()
+        );
+        return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error));
     }
 
-    private Mono<ErrorResponse> buildError(String message, String code, HttpStatus status) {
-        return Mono.just(new ErrorResponse(message, code, status.value()));
-    }
+    // Error Response DTO
+    record ErrorResponse(
+        LocalDateTime timestamp,
+        int status,
+        String error,
+        String message
+    ) {}
 }

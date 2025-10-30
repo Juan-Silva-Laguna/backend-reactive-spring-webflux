@@ -1,150 +1,147 @@
 package com.company.maintenance.app.domain.model;
 
-import java.util.Date;
-import java.util.List;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
 
-public class Mantenimiento {
-	private String id;
-	private Date fecha;
-	private String descripcion;
-	private Double precio;
-	private List<Repuesto> repuestos;
-	private String tipo;
-	private String maquinaId;
+public final class Mantenimiento {
+    private final String id;
+    private final String fecha;
+    private final String descripcion;
+    private final Double precio;
+    private final List<Repuesto> repuestos;
+    private final String tipo;
+    private final String maquinaId; // ✅ Agregado para la relación
 
-	public Mantenimiento(String id, Date fecha, String descripcion, Double precio, List<Repuesto> repuestos,String tipo, String maquinaId) {
-		this.id = id;
-		this.fecha = fecha;
-		this.descripcion = descripcion;
-		this.precio = precio;
-		this.tipo= tipo;
-		this.maquinaId= maquinaId;
-		this.repuestos = repuestos != null ? new ArrayList<>(repuestos) : new ArrayList<>();
-		validate();
-	}
 
-	public Mantenimiento(Date fecha, String descripcion, Double precio, List<Repuesto> repuestos ,String tipo, String maquinaId) {
-		this.fecha = fecha;
-		this.descripcion = descripcion;
-		this.precio = precio;
-		this.tipo= tipo;
-		this.maquinaId= maquinaId;
-		this.repuestos = repuestos != null ? new ArrayList<>(repuestos) : new ArrayList<>();
-		validate();
-	}
+    // Constructor completo
+    public Mantenimiento(String id, String fecha, String descripcion, 
+                        Double precio, List<Repuesto> repuestos, String tipo, String maquinaId) {
+        this.id = id;
+        this.fecha = fecha;
+        this.descripcion = descripcion;
+        this.precio = precio;
+        this.repuestos = repuestos != null 
+            ? Collections.unmodifiableList(new ArrayList<>(repuestos))
+            : Collections.emptyList();
+        this.tipo = tipo;
+        this.maquinaId = maquinaId;
+    }
 
-	private void validate() {
-		if (fecha == null) {
-			throw new IllegalArgumentException("La fecha del mantenimiento no puede ser nula");
-		}
-		if (descripcion == null || descripcion.trim().isEmpty()) {
-			throw new IllegalArgumentException("La descripción no puede estar vacía");
-		}
-		if (precio == null || precio < 0) {
-			throw new IllegalArgumentException("El precio debe ser mayor o igual a cero");
-		}
-	}
+    // Constructor sin maquinaId (para compatibilidad)
+    public Mantenimiento(String id, String fecha, String descripcion, 
+                        Double precio, List<Repuesto> repuestos, String tipo) {
+        this(id, fecha, descripcion, precio, repuestos, tipo, null);
+    }
 
-	public void addRepuesto(Repuesto repuesto) {
-		if (repuesto == null) {
-			throw new IllegalArgumentException("El repuesto no puede ser nulo");
-		}
-		this.repuestos.add(repuesto);
-//		recalcularPrecioTotal();
-//		this.precio += repuesto.getPrecio();
-	}
-	
-//	public void removeRepuesto(String repuestoId) {
-//		this.repuestos.removeIf(r -> {
-//			if  (r.getId().equals(repuestoId)){
-//				this.precio -= r.getPrecio();
-//				return true;
-//			}
-//			return false;
-//		});
-//	}
-	
-	public void removeRepuesto(String repuestoId) {
-	    this.repuestos.stream()
-	        .filter(r -> r.getId().equals(repuestoId))
-	        .findFirst()
-	        .ifPresent(r -> {
-	            this.repuestos.remove(r);
-	            this.precio -= r.getPrecio();
-	        });
-	}
-	
-	public void recalcularPrecioTotal() {
-		double total = this.precio;
-		for (Repuesto repuesto : repuestos) {
-			total += repuesto.getPrecio();
-		}
-		this.precio = total;
-	}
+    // Constructor sin ID
+    public Mantenimiento(String fecha, String descripcion, 
+                        Double precio, List<Repuesto> repuestos, String tipo) {
+        this(null, fecha, descripcion, precio, repuestos, tipo, null);
+    }
 
-	public int getCantidadRepuestos() {
-		return repuestos != null ? repuestos.size() : 0;
-	}
+    // ✅ Métodos inmutables
+    public Mantenimiento withId(String id) {
+        return new Mantenimiento(id, this.fecha, this.descripcion, 
+                                this.precio, this.repuestos, this.tipo, this.maquinaId);
+    }
 
-	public String getId() {
-		return id;
-	}
+    public Mantenimiento withMaquinaId(String maquinaId) {
+        return new Mantenimiento(this.id, this.fecha, this.descripcion, 
+                                this.precio, this.repuestos, this.tipo, maquinaId);
+    }
 
-	public void setId(String id) {
-		this.id = id;
-	}
+    public Mantenimiento withFecha(String fecha) {
+        return new Mantenimiento(this.id, fecha, this.descripcion, 
+                                this.precio, this.repuestos, this.tipo, this.maquinaId);
+    }
 
-	public Date getFecha() {
-		return fecha;
-	}
+    public Mantenimiento withDescripcion(String descripcion) {
+        return new Mantenimiento(this.id, this.fecha, descripcion, 
+                                this.precio, this.repuestos, this.tipo, this.maquinaId);
+    }
 
-	public void setFecha(Date fecha) {
-		this.fecha = fecha;
-		validate();
-	}
+    public Mantenimiento withPrecio(Double precio) {
+        return new Mantenimiento(this.id, this.fecha, this.descripcion, 
+                                precio, this.repuestos, this.tipo, this.maquinaId);
+    }
 
-	public String getDescripcion() {
-		return descripcion;
-	}
+    public Mantenimiento withTipo(String tipo) {
+        return new Mantenimiento(this.id, this.fecha, this.descripcion, 
+                                this.precio, this.repuestos, tipo, this.maquinaId);
+    }
 
-	public void setDescripcion(String descripcion) {
-		this.descripcion = descripcion;
-		validate();
-	}
+    public Mantenimiento withRepuesto(Repuesto repuesto) {
+        List<Repuesto> nuevaLista = new ArrayList<>(this.repuestos);
+        nuevaLista.add(repuesto);
+        return new Mantenimiento(this.id, this.fecha, this.descripcion, 
+                                this.precio, nuevaLista, this.tipo, this.maquinaId);
+    }
 
-	public Double getPrecio() {
-		return precio;
-	}
+    public Mantenimiento withoutRepuesto(String repuestoId) {
+        Optional<Repuesto> repuestoAEliminar = this.repuestos.stream()
+                .filter(r -> r.getId().equals(repuestoId))
+                .findFirst();
 
-	public void setPrecio(Double precio) {
-		this.precio = precio;
-		validate();
-	}
+            double nuevoPrecio = this.precio;
+            if (repuestoAEliminar.isPresent()) {
+                nuevoPrecio -= repuestoAEliminar.get().getPrecio();
+            }
+        List<Repuesto> nuevaLista = this.repuestos.stream()
+            .filter(r -> !r.getId().equals(repuestoId))
+            .toList();
+        return new Mantenimiento(this.id, this.fecha, this.descripcion, 
+        		nuevoPrecio, nuevaLista, this.tipo, this.maquinaId);
+    }
 
-	public List<Repuesto> getRepuestos() {
-		return repuestos != null ? new ArrayList<>(repuestos) : new ArrayList<>();
-	}
+    public Mantenimiento withPrecioIncremented(Double increment) {
+        return new Mantenimiento(this.id, this.fecha, this.descripcion, 
+                                this.precio + increment, this.repuestos, this.tipo, this.maquinaId);
+    }
 
-	public void setRepuestos(List<Repuesto> repuestos) {
-		this.repuestos = repuestos != null ? new ArrayList<>(repuestos) : new ArrayList<>();
-	}
+    public Mantenimiento recalcularPrecioTotal() {
+        return withPrecio(getPrecioMantenimiento()+getTotalRepuestos());
+    }
+    
+    public Mantenimiento aumentarPrecio(Double precio) {
+    	double total = precio + this.precio;
+        return withPrecio(total);
+    }
+    
+    public Mantenimiento disminuirPrecio(Double precio) {
+    	double total = this.precio - precio;
+        return withPrecio(total);
+    }
 
-	public String getTipo() {
-		return tipo;
-	}
+    public String getId() { return id; }
+    public String getFecha() { return fecha; }
+    public String getDescripcion() { return descripcion; }
+    public Double getPrecio() { return precio; }
+    public List<Repuesto> getRepuestos() { return repuestos; }
+    public String getTipo() { return tipo; }
+    public String getMaquinaId() { return maquinaId; }
+    
+    public Integer getCantidadRepuestos() {
+        return repuestos != null ? repuestos.size() : 0;
+    }
+    
+    public Double getTotalRepuestos() {
+        BigDecimal total = repuestos.stream()
+            .map(Repuesto::getPrecio)
+            .map(BigDecimal::valueOf)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return total.setScale(2, RoundingMode.HALF_UP).doubleValue();
+    }
 
-	public void setTipo(String tipo) {
-		this.tipo = tipo;
-	}
+    public Double getPrecioMantenimiento() {
+        double totalRepuestos = getTotalRepuestos();
+        double resultado = this.precio >= totalRepuestos 
+            ? this.precio - totalRepuestos 
+            : this.precio;
+        return Math.round(resultado * 100.0) / 100.0;
+    }
 
-	public String getMaquinaId() {
-		return maquinaId;
-	}
-
-	public void setMaquinaId(String maquinaId) {
-		this.maquinaId = maquinaId;
-	}
-	
-	
 }

@@ -1,55 +1,34 @@
 package com.company.maintenance.app.infrastructure.adapter.out.persistence.mongodb.entity;
 
-//import org.springframework.data.annotation.Id;
-//import org.springframework.data.mongodb.core.index.Indexed;
-//import org.springframework.data.mongodb.core.mapping.Document;
-
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbAttribute;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbPartitionKey;
 
-//@Document(collection = "repuestos")
 @DynamoDbBean
 public class RepuestoDocument {
 
-//    @Id
-	private String id;
+    private String id;
+    private String nombre;
+    private Double precio;
 
-//    @Indexed(unique = true)
-	private String nombre;
+    public RepuestoDocument() {}
 
-	private double precio;
+    public RepuestoDocument(String id, String nombre, Double precio) {
+        this.id = id;
+        this.nombre = nombre;
+        this.precio = precio;
+    }
 
-	public RepuestoDocument() {
-	}
+    @DynamoDbPartitionKey
+    @DynamoDbAttribute("id")
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
 
-	public RepuestoDocument(String id, String nombre, double precio) {
-		this.id = id;
-		this.nombre = nombre;
-		this.precio = precio;
-	}
+    @DynamoDbAttribute("nombre")
+    public String getNombre() { return nombre; }
+    public void setNombre(String nombre) { this.nombre = nombre; }
 
-	@DynamoDbPartitionKey
-	public String getId() {
-		return id;
-	}
-
-	public void setId(String id) {
-		this.id = id;
-	}
-
-	public String getNombre() {
-		return nombre;
-	}
-
-	public void setNombre(String nombre) {
-		this.nombre = nombre;
-	}
-
-	public double getPrecio() {
-		return precio;
-	}
-
-	public void setPrecio(double precio) {
-		this.precio = precio;
-	}
+    @DynamoDbAttribute("precio")
+    public Double getPrecio() { return precio; }
+    public void setPrecio(Double precio) { this.precio = precio; }
 }

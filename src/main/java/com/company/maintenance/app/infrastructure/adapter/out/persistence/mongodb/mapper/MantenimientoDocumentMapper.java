@@ -1,68 +1,137 @@
 package com.company.maintenance.app.infrastructure.adapter.out.persistence.mongodb.mapper;
 
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.Collections;
-import java.util.Date;
 import java.util.List;
-import java.util.stream.Collectors;
-
+import org.springframework.stereotype.Component;
 import com.company.maintenance.app.domain.model.Mantenimiento;
 import com.company.maintenance.app.domain.model.Repuesto;
 import com.company.maintenance.app.infrastructure.adapter.out.persistence.mongodb.entity.MantenimientoDocument;
 import com.company.maintenance.app.infrastructure.adapter.out.persistence.mongodb.entity.RepuestoDocument;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
-public final class MantenimientoDocumentMapper {
+@Component
+public class MantenimientoDocumentMapper {
 
-    private MantenimientoDocumentMapper() {}
-    private static final SimpleDateFormat formatoISO = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
-    
-    // Document -> Domain
-    public static Mantenimiento toDomain(MantenimientoDocument doc) {
+    private final RepuestoDocumentMapper repuestoMapper;
+
+    public MantenimientoDocumentMapper(RepuestoDocumentMapper repuestoMapper) {
+        this.repuestoMapper = repuestoMapper;
+    }
+
+    /**
+     * ✅ CONVERSIÓN REACTIVA: Document -> Domain
+     */
+    public Mono<Mantenimiento> toDomainReactive(MantenimientoDocument doc) {
+        if (doc == null) {
+            return Mono.empty();
+        }
+
+        // Si no hay repuestos, retorna directamente
+        if (doc.getRepuestos() == null || doc.getRepuestos().isEmpty()) {
+            return Mono.just(new Mantenimiento(
+                doc.getId(),
+                doc.getFecha(),
+                doc.getDescripcion(),
+                doc.getPrecio(),
+                Collections.emptyList(),
+                doc.getTipo()
+            ).withMaquinaId(doc.getMaquinaId()));
+        }
+
+        // Convierte repuestos de forma reactiva
+        return Flux.fromIterable(doc.getRepuestos())
+            .flatMap(repuestoMapper::toDomainReactive)
+            .collectList()
+            .map(repuestos -> new Mantenimiento(
+                doc.getId(),
+                doc.getFecha(),
+                doc.getDescripcion(),
+                doc.getPrecio(),
+                repuestos,
+                doc.getTipo()
+            ).withMaquinaId(doc.getMaquinaId()));
+    }
+
+    /**
+     * ⚠️ CONVERSIÓN SÍNCRONA (para compatibilidad)
+     * Debe ejecutarse en Schedulers.boundedElastic()
+     */
+    public Mantenimiento toDomain(MantenimientoDocument doc) {
         if (doc == null) return null;
 
         List<Repuesto> repuestos = (doc.getRepuestos() == null)
             ? Collections.emptyList()
             : doc.getRepuestos().stream()
-                .map(RepuestoDocumentMapper::toDomain)
-                .collect(Collectors.toList());
-        
-        Date fecha = null;
-        try {
-            fecha = formatoISO.parse(doc.getFecha());
-        } catch (ParseException e) {
-            throw new RuntimeException("Error al parsear la fecha: " + doc.getFecha(), e);
-        }
-        
+                .map(repuestoMapper::toDomain)
+                .toList();
+
         return new Mantenimiento(
-            doc.getId(),
-            fecha,
-            doc.getDescripcion(),
-            doc.getPrecio(),
-            repuestos,
-            doc.getTipo(),
-            doc.getMaquinaId()
-        );
+        	    doc.getId(),
+        	    doc.getFecha(),
+        	    doc.getDescripcion(),
+        	    doc.getPrecio(),
+        	    repuestos,
+        	    doc.getTipo()
+        	).withMaquinaId(doc.getMaquinaId());
     }
 
-    // Domain -> Document (nombre: toDocument para ajustarse a tu adapter)
-    public static MantenimientoDocument toDocument(Mantenimiento mant) {
-        if (mant == null) return null;
+    /**
+     * ✅ CONVERSIÓN REACTIVA: Domain -> Document
+     */
+    public Mono<MantenimientoDocument> toDocumentReactive(Mantenimiento mantenimiento) {
+        if (mantenimiento == null) {
+            return Mono.empty();
+        }
 
-        List<RepuestoDocument> repuestosDoc = (mant.getRepuestos() == null)
+        // Si no hay repuestos
+        if (mantenimiento.getRepuestos() == null || mantenimiento.getRepuestos().isEmpty()) {
+            return Mono.just(new MantenimientoDocument(
+                mantenimiento.getId(),
+                mantenimiento.getFecha(),
+                mantenimiento.getDescripcion(),
+                mantenimiento.getPrecio(),
+                Collections.emptyList(),
+                mantenimiento.getTipo(),
+                mantenimiento.getMaquinaId()
+            ));
+        }
+
+        // Convierte repuestos de forma reactiva
+        return Flux.fromIterable(mantenimiento.getRepuestos())
+            .flatMap(repuestoMapper::toDocumentReactive)
+            .collectList()
+            .map(repuestosDoc -> new MantenimientoDocument(
+                mantenimiento.getId(),
+                mantenimiento.getFecha(),
+                mantenimiento.getDescripcion(),
+                mantenimiento.getPrecio(),
+                repuestosDoc,
+                mantenimiento.getTipo(),
+                mantenimiento.getMaquinaId()
+            ));
+    }
+
+    /**
+     * ⚠️ CONVERSIÓN SÍNCRONA (para compatibilidad)
+     */
+    public MantenimientoDocument toDocument(Mantenimiento mantenimiento) {
+        if (mantenimiento == null) return null;
+
+        List<RepuestoDocument> repuestosDoc = (mantenimiento.getRepuestos() == null)
             ? Collections.emptyList()
-            : mant.getRepuestos().stream()
-                .map(RepuestoDocumentMapper::toDocument)
-                .collect(Collectors.toList());
+            : mantenimiento.getRepuestos().stream()
+                .map(repuestoMapper::toDocument)
+                .toList();
 
         return new MantenimientoDocument(
-            mant.getId(),
-            formatoISO.format(mant.getFecha()),
-            mant.getDescripcion(),
-            mant.getPrecio(),
+            mantenimiento.getId(),
+            mantenimiento.getFecha(),
+            mantenimiento.getDescripcion(),
+            mantenimiento.getPrecio(),
             repuestosDoc,
-            mant.getTipo(),
-            mant.getMaquinaId()
+            mantenimiento.getTipo(),
+            mantenimiento.getMaquinaId()
         );
     }
 }

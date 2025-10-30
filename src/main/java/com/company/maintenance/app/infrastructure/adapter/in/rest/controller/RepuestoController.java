@@ -1,99 +1,85 @@
 package com.company.maintenance.app.infrastructure.adapter.in.rest.controller;
 
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
-import org.springframework.web.bind.annotation.RestController;
-
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
 import com.company.maintenance.app.application.port.in.RepuestoUseCase;
 import com.company.maintenance.app.infrastructure.adapter.in.rest.dto.RepuestoRequest;
 import com.company.maintenance.app.infrastructure.adapter.in.rest.dto.RepuestoResponse;
 import com.company.maintenance.app.infrastructure.adapter.in.rest.mapper.RepuestoDtoMapper;
-
 import jakarta.validation.Valid;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import org.springframework.http.HttpStatus;
-import org.springframework.security.access.prepost.PreAuthorize;
 @RestController
 @RequestMapping("/api/repuestos")
-@PreAuthorize("hasRole('SUPERVISOR')")
+@PreAuthorize("hasAnyRole('TECNICO', 'SUPERVISOR')")
 public class RepuestoController {
     
-    private final RepuestoUseCase respuestoUsecase;
-    
-    public RepuestoController(RepuestoUseCase respuestoUsecase) {
-        this.respuestoUsecase = respuestoUsecase;
+    private final RepuestoUseCase repuestoUseCase;
+
+    public RepuestoController(RepuestoUseCase repuestoUseCase) {
+        this.repuestoUseCase = repuestoUseCase;
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public Mono<RepuestoResponse> createRepuesto(@Valid @RequestBody RepuestoRequest request) {
-        return respuestoUsecase.createRepuesto(request.getNombre(), request.getPrecio())
-            .map(RepuestoDtoMapper::toResponse);
+        return repuestoUseCase.createRepuesto(request.getNombre(), request.getPrecio())
+            .flatMap(RepuestoDtoMapper::toResponseReactive);
     }
 
     @GetMapping("/{id}")
-    public Mono<RepuestoResponse> getRepuestoById(@PathVariable("id") String id) {
-        return respuestoUsecase.findById(id)
-            .map(RepuestoDtoMapper::toResponse);
+    public Mono<RepuestoResponse> getRepuestoById(@PathVariable String id) {
+        return repuestoUseCase.findById(id)
+            .flatMap(RepuestoDtoMapper::toResponseReactive);
     }
 
-    // READ - Por nombre
     @GetMapping("/nombre/{nombre}")
-    public Mono<RepuestoResponse> getRepuestoByNombre(@PathVariable("nombre") String nombre) {
-        return respuestoUsecase.findByNombre(nombre)
-            .map(RepuestoDtoMapper::toResponse);
+    public Mono<RepuestoResponse> getRepuestoByNombre(@PathVariable String nombre) {
+        return repuestoUseCase.findByNombre(nombre)
+            .flatMap(RepuestoDtoMapper::toResponseReactive);
     }
 
-    // READ - Listar todos
     @GetMapping
     public Flux<RepuestoResponse> getAllRepuestos() {
-        return respuestoUsecase.findAll()
-            .map(RepuestoDtoMapper::toResponse);
+        return repuestoUseCase.findAll()
+            .flatMap(RepuestoDtoMapper::toResponseReactive);
     }
 
-    // READ - Por rango de precio
-    @GetMapping("/precio")
+    /**
+     * ✅ Búsqueda por rango de precios
+     */
+    @GetMapping("/precio-range")
     public Flux<RepuestoResponse> getRepuestosByPriceRange(
-            @RequestParam("min") Double min,
-            @RequestParam("max") Double max) {
-        return respuestoUsecase.findByPriceRange(min, max)
-            .map(RepuestoDtoMapper::toResponse);
+            @RequestParam Double minPrecio,
+            @RequestParam Double maxPrecio) {
+        return repuestoUseCase.findByPriceRange(minPrecio, maxPrecio)
+            .flatMap(RepuestoDtoMapper::toResponseReactive);
     }
 
-    // UPDATE - Completo
     @PutMapping("/{id}")
     public Mono<RepuestoResponse> updateRepuesto(
-    		@PathVariable("id") String id,
+            @PathVariable String id,
             @Valid @RequestBody RepuestoRequest request) {
-        return respuestoUsecase.updateRepuesto(id, request.getNombre(), request.getPrecio())
-            .map(RepuestoDtoMapper::toResponse);
+        return repuestoUseCase.updateRepuesto(id, request.getNombre(), request.getPrecio())
+            .flatMap(RepuestoDtoMapper::toResponseReactive);
     }
 
-    // UPDATE - Solo precio
+    /**
+     * ✅ Actualizar solo el precio
+     */
     @PatchMapping("/{id}/precio")
-    public Mono<RepuestoResponse> updatePrice(
-            @PathVariable("id") String id,
-            @RequestParam("precio") Double precio) {
-        return respuestoUsecase.updatePrice(id, precio)
-            .map(RepuestoDtoMapper::toResponse);
+    public Mono<RepuestoResponse> updatePrecio(
+            @PathVariable String id,
+            @RequestParam Double precio) {
+        return repuestoUseCase.updatePrice(id, precio)
+            .flatMap(RepuestoDtoMapper::toResponseReactive);
     }
 
-
-    // DELETE
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public Mono<Void> deleteRepuesto(@PathVariable("id") String id) {
-        return respuestoUsecase.deleteById(id);
+    public Mono<Void> deleteRepuesto(@PathVariable String id) {
+        return repuestoUseCase.deleteById(id);
     }
-    
 }

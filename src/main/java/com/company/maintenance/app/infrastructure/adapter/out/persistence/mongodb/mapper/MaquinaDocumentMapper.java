@@ -2,26 +2,64 @@ package com.company.maintenance.app.infrastructure.adapter.out.persistence.mongo
 
 import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
-
+import org.springframework.stereotype.Component;
 import com.company.maintenance.app.domain.model.Mantenimiento;
 import com.company.maintenance.app.domain.model.Maquina;
 import com.company.maintenance.app.infrastructure.adapter.out.persistence.mongodb.entity.MantenimientoDocument;
 import com.company.maintenance.app.infrastructure.adapter.out.persistence.mongodb.entity.MaquinaDocument;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
-public final class MaquinaDocumentMapper {
+@Component
+public class MaquinaDocumentMapper {
+    
+    private final MantenimientoDocumentMapper mantenimientoMapper;
 
-    private MaquinaDocumentMapper() {}
+    public MaquinaDocumentMapper(MantenimientoDocumentMapper mantenimientoMapper) {
+        this.mantenimientoMapper = mantenimientoMapper;
+    }
 
-    // Document -> Domain
-    public static Maquina toDomain(MaquinaDocument doc) {
+    /**
+     * ✅ CONVERSIÓN REACTIVA: Document -> Domain
+     * No usa streams bloqueantes
+     */
+    public Mono<Maquina> toDomainReactive(MaquinaDocument doc) {
+        if (doc == null) {
+            return Mono.empty();
+        }
+
+        if (doc.getMantenimientos() == null || doc.getMantenimientos().isEmpty()) {
+            return Mono.just(new Maquina(
+                doc.getId(),
+                doc.getNombre(),
+                doc.getModelo(),
+                Collections.emptyList()
+            ));
+        }
+
+        return Flux.fromIterable(doc.getMantenimientos())
+            .flatMap(mantenimientoMapper::toDomainReactive)
+            .collectList()
+            .map(mantenimientos -> new Maquina(
+                doc.getId(),
+                doc.getNombre(),
+                doc.getModelo(),
+                mantenimientos
+            ));
+    }
+
+    /**
+     * ⚠️ CONVERSIÓN SÍNCRONA (para compatibilidad)
+     * Debe ejecutarse en Schedulers.boundedElastic()
+     */
+    public Maquina toDomain(MaquinaDocument doc) {
         if (doc == null) return null;
 
         List<Mantenimiento> mantenimientos = (doc.getMantenimientos() == null)
             ? Collections.emptyList()
             : doc.getMantenimientos().stream()
-                .map(MantenimientoDocumentMapper::toDomain)
-                .collect(Collectors.toList());
+                .map(mantenimientoMapper::toDomain)
+                .toList(); // Java 16+ (más eficiente que collect)
 
         return new Maquina(
             doc.getId(),
@@ -31,19 +69,50 @@ public final class MaquinaDocumentMapper {
         );
     }
 
-    public static MaquinaDocument toDocument(Maquina mant) {
-        if (mant == null) return null;
+    /**
+     * ✅ CONVERSIÓN REACTIVA: Domain -> Document
+     */
+    public Mono<MaquinaDocument> toDocumentReactive(Maquina maquina) {
+        if (maquina == null) {
+            return Mono.empty();
+        }
 
-        List<MantenimientoDocument> mantenimientosDoc = (mant.getMantenimientos() == null)
+        if (maquina.getMantenimientos() == null || maquina.getMantenimientos().isEmpty()) {
+            return Mono.just(new MaquinaDocument(
+                maquina.getId(),
+                maquina.getNombre(),
+                maquina.getModelo(),
+                Collections.emptyList()
+            ));
+        }
+
+        return Flux.fromIterable(maquina.getMantenimientos())
+            .flatMap(mantenimientoMapper::toDocumentReactive)
+            .collectList()
+            .map(mantenimientosDoc -> new MaquinaDocument(
+                maquina.getId(),
+                maquina.getNombre(),
+                maquina.getModelo(),
+                mantenimientosDoc
+            ));
+    }
+
+    /**
+     * ⚠️ CONVERSIÓN SÍNCRONA (para compatibilidad)
+     */
+    public MaquinaDocument toDocument(Maquina maquina) {
+        if (maquina == null) return null;
+
+        List<MantenimientoDocument> mantenimientosDoc = (maquina.getMantenimientos() == null)
             ? Collections.emptyList()
-            : mant.getMantenimientos().stream()
-                .map(MantenimientoDocumentMapper::toDocument)
-                .collect(Collectors.toList());
+            : maquina.getMantenimientos().stream()
+                .map(mantenimientoMapper::toDocument)
+                .toList();
 
         return new MaquinaDocument(
-            mant.getId(),
-            mant.getNombre(),
-            mant.getModelo(),
+            maquina.getId(),
+            maquina.getNombre(),
+            maquina.getModelo(),
             mantenimientosDoc
         );
     }
